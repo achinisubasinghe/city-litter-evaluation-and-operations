@@ -1,0 +1,19 @@
+{
+  "name": "trash-classifier-typescript",
+  "version": "1.0.0",
+  "description": "MobileNetV2 Trash Detection ONNX Inference Client for TypeScript",
+  "main": "dist/infer.js",
+  "scripts": {
+    "build": "tsc",
+    "infer": "ts-node infer.ts"
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.19.0",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}

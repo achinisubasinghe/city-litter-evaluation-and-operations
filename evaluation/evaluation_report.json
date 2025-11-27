@@ -1,0 +1,42 @@
+{
+  "checkpoint": "checkpoints/best_model.pth",
+  "test_samples": 300,
+  "accuracy": 1.0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1_score": 1.0,
+  "roc_auc": 1.0,
+  "confusion_matrix": {
+    "true_clean_pred_clean (TN)": 150,
+    "true_clean_pred_trash (FP)": 0,
+    "true_trash_pred_clean (FN)": 0,
+    "true_trash_pred_trash (TP)": 150
+  },
+  "classification_report": {
+    "Clean (0)": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 150.0
+    },
+    "Trash (1)": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 150.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 300.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 300.0
+    }
+  }
+}
