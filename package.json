@@ -1,0 +1,43 @@
+{
+  "name": "city-litter-evaluation-and-operations",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "web": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "app": "bun --cwd app start",
+    "app:android": "bun --cwd app android",
+    "app:ios": "bun --cwd app ios",
+    "app:web": "bun --cwd app web",
+    "bot": "bun run bot/bot.ts",
+    "bot:node": "node --loader ts-node/esm bot/bot.ts",
+    "convex:dev": "convex dev",
+    "test:classifier": "bun run bot/test-classifier.ts",
+    "bot:set-webhook": "bun run scripts/set-webhook.ts",
+    "bot:delete-webhook": "bun run scripts/delete-webhook.ts"
+  },
+  "dependencies": {
+    "convex": "^1.19.0",
+    "dotenv": "^16.4.7",
+    "onnxruntime-node": "^1.20.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sharp": "^0.33.5",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.1.0"
+  },
+  "trustedDependencies": [
+    "onnxruntime-node"
+  ]
+}

@@ -48,16 +48,18 @@ data/
 *.zip
 *.tar.gz
 
-# Model Checkpoints and Weights
+# Model Checkpoints and Training Intermediates
 checkpoints/
-models/
-*.pth
-*.pt
 *.ckpt
 *.bin
 *.h5
-*.onnx
-*.onnx.data
+
+# Whitelist developed AI models in models/
+!models/
+!models/**
+
+# Expo & Mobile
+.expo/
 
 # Testing & Coverage
 .pytest_cache/
