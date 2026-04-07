@@ -21,11 +21,11 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList>
-          <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
+          <TabTrigger name="index" href="/" asChild>
+            <TabButton>කාර්යයන් • Tasks</TabButton>
           </TabTrigger>
-          <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Explore</TabButton>
+          <TabTrigger name="history" href="/history" asChild>
+            <TabButton>ඉතිහාසය • History</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>
@@ -35,11 +35,13 @@ export default function AppTabs() {
 
 export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
   return (
-    <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
+    <Pressable {...(props as any)} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+        style={[styles.tabButtonView, isFocused && styles.tabButtonActive]}>
+        <ThemedText
+          type="smallBold"
+          style={isFocused ? { color: '#059669' } : { color: '#64748b' }}>
           {children}
         </ThemedText>
       </ThemedView>
@@ -53,23 +55,17 @@ export function CustomTabList(props: TabListProps) {
 
   return (
     <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Expo Starter
-        </ThemedText>
+      <ThemedView type="backgroundElement" style={[styles.innerContainer, { borderColor: colors.border }]}>
+        <View style={styles.brandGroup}>
+          <View style={styles.brandIconCircle}>
+            <ThemedText style={{ fontSize: 13 }}>🇱🇰</ThemedText>
+          </View>
+          <ThemedText type="smallBold" style={styles.brandText}>
+            CLEO Field Ops
+          </ThemedText>
+        </View>
 
         {props.children}
-
-        <ExternalLink href="https://docs.expo.dev" asChild>
-          <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
-            <SymbolView
-              tintColor={colors.text}
-              name={{ ios: 'arrow.up.right.square', web: 'link' }}
-              size={12}
-            />
-          </Pressable>
-        </ExternalLink>
       </ThemedView>
     </View>
   );
@@ -88,14 +84,33 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.five,
     borderRadius: Spacing.five,
+    borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
     flexGrow: 1,
     gap: Spacing.two,
     maxWidth: MaxContentWidth,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  brandGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginRight: 'auto',
+  },
+  brandIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#ecfdf5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   brandText: {
-    marginRight: 'auto',
+    fontWeight: '800',
   },
   pressed: {
     opacity: 0.7,
@@ -105,11 +120,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
   },
-  externalPressable: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.one,
-    marginLeft: Spacing.three,
+  tabButtonActive: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1.5,
+    borderColor: '#059669',
   },
 });

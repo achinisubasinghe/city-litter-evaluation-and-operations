@@ -29,9 +29,19 @@ export default defineSchema({
     // Camera quality metrics
     qualityScore: v.optional(v.number()),
     blurScore: v.optional(v.number()),
+    // Worker resolution & proof telemetry
+    proofPhotoStorageId: v.optional(v.id("_storage")),
+    resolvedAt: v.optional(v.number()),
+    resolvedBy: v.optional(v.string()),
+    resolutionNotes: v.optional(v.string()),
+    // Worker assignment
+    assignedWorkerId: v.optional(v.string()),
+    assignedWorkerName: v.optional(v.string()),
+    assignedAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_assignedWorkerId", ["assignedWorkerId"]),
 
   drafts: defineTable({
     userId: v.string(),

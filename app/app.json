@@ -8,9 +8,11 @@
     "scheme": "cleo",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.cleo.app",
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.cleo.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -31,6 +33,19 @@
           "backgroundColor": "#208AEF",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow CLEO to access photos to upload proof of litter collection.",
+          "cameraPermission": "Allow CLEO to access camera to capture proof of litter collection."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow CLEO to calculate distance to assigned litter collection sites."
         }
       ]
     ],

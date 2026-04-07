@@ -249,6 +249,14 @@ export const listReports = query({
       offsetMeters: v.optional(v.number()),
       qualityScore: v.optional(v.number()),
       blurScore: v.optional(v.number()),
+      proofPhotoStorageId: v.optional(v.id("_storage")),
+      proofImageUrl: v.union(v.string(), v.null()),
+      resolvedAt: v.optional(v.number()),
+      resolvedBy: v.optional(v.string()),
+      resolutionNotes: v.optional(v.string()),
+      assignedWorkerId: v.optional(v.string()),
+      assignedWorkerName: v.optional(v.string()),
+      assignedAt: v.optional(v.number()),
     })
   ),
   handler: async (ctx, args) => {
@@ -258,12 +266,120 @@ export const listReports = query({
     return await Promise.all(
       reports.map(async (r) => {
         const imageUrl = await ctx.storage.getUrl(r.photoStorageId);
+        const proofImageUrl = r.proofPhotoStorageId
+          ? await ctx.storage.getUrl(r.proofPhotoStorageId)
+          : null;
         return {
           ...r,
           imageUrl,
+          proofImageUrl,
         };
       })
     );
+  },
+});
+
+/**
+ * Gets a single report by ID with resolved signed URLs for both original and proof photos.
+ */
+export const getReport = query({
+  args: { reportId: v.id("reports") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("reports"),
+      _creationTime: v.number(),
+      userId: v.string(),
+      userName: v.optional(v.string()),
+      chatId: v.string(),
+      photoStorageId: v.id("_storage"),
+      imageUrl: v.union(v.string(), v.null()),
+      proofPhotoStorageId: v.optional(v.id("_storage")),
+      proofImageUrl: v.union(v.string(), v.null()),
+      latitude: v.number(),
+      longitude: v.number(),
+      confidence: v.optional(v.number()),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("in_progress"),
+        v.literal("resolved"),
+        v.literal("rejected")
+      ),
+      caption: v.optional(v.string()),
+      createdAt: v.number(),
+      rawLatitude: v.optional(v.number()),
+      rawLongitude: v.optional(v.number()),
+      isLocationCorrected: v.optional(v.boolean()),
+      correctionMethod: v.optional(v.string()),
+      speedKmh: v.optional(v.number()),
+      heading: v.optional(v.number()),
+      offsetMeters: v.optional(v.number()),
+      qualityScore: v.optional(v.number()),
+      blurScore: v.optional(v.number()),
+      resolvedAt: v.optional(v.number()),
+      resolvedBy: v.optional(v.string()),
+      resolutionNotes: v.optional(v.string()),
+      assignedWorkerId: v.optional(v.string()),
+      assignedWorkerName: v.optional(v.string()),
+      assignedAt: v.optional(v.number()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const r = await ctx.db.get(args.reportId);
+    if (!r) return null;
+    const imageUrl = await ctx.storage.getUrl(r.photoStorageId);
+    const proofImageUrl = r.proofPhotoStorageId
+      ? await ctx.storage.getUrl(r.proofPhotoStorageId)
+      : null;
+    return {
+      ...r,
+      imageUrl,
+      proofImageUrl,
+    };
+  },
+});
+
+/**
+ * Assigns a report to a specific worker and marks it as in_progress.
+ */
+export const assignReport = mutation({
+  args: {
+    reportId: v.id("reports"),
+    workerId: v.string(),
+    workerName: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.reportId, {
+      status: "in_progress",
+      assignedWorkerId: args.workerId,
+      assignedWorkerName: args.workerName,
+      assignedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+/**
+ * Resolves a report with photographic proof of collection.
+ */
+export const resolveReport = mutation({
+  args: {
+    reportId: v.id("reports"),
+    proofPhotoStorageId: v.id("_storage"),
+    workerName: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.reportId, {
+      status: "resolved",
+      proofPhotoStorageId: args.proofPhotoStorageId,
+      resolvedAt: Date.now(),
+      resolvedBy: args.workerName ?? "Worker",
+      resolutionNotes: args.notes,
+    });
+    return null;
   },
 });
 
