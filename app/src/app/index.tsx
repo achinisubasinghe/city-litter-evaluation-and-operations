@@ -21,10 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import {
-  Colors,
   Spacing,
   MaxContentWidth,
   BottomTabInset,
@@ -33,16 +31,13 @@ import {
 } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { calculateDistance, formatDistance } from '@/utils/distance';
-import { getI18n, Language } from '@/constants/i18n';
+import { useLanguage } from '@/constants/LanguageContext';
 
 type FilterTab = 'available' | 'my_tasks' | 'resolved';
 
 export default function WorkerHomeScreen() {
   const theme = useTheme();
-
-  // Language state: defaults to bilingual (English + Sinhala) as requested
-  const [lang, setLang] = useState<Language>('bilingual');
-  const t = getI18n(lang);
+  const { lang, setLang, t } = useLanguage();
 
   // Convex Data Queries and Mutations
   const reports = useQuery(api.reports.listReports, { limit: 100 });
@@ -122,7 +117,7 @@ export default function WorkerHomeScreen() {
       ? myTasks
       : resolvedTasks;
 
-  // Camera & Image Picker Handlers (Outdoor glove-friendly)
+  // Camera & Image Picker Handlers
   const handleTakePhoto = async () => {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -201,7 +196,7 @@ export default function WorkerHomeScreen() {
         reportId: selectedTask._id,
         proofPhotoStorageId: storageId,
         workerName: workerName,
-        notes: proofNotes.trim() ? proofNotes.trim() : 'Litter collected and area cleaned.',
+        notes: proofNotes.trim() ? proofNotes.trim() : t.quickNote3,
       });
 
       Alert.alert(t.successAlertTitle, t.successAlertMsg);
@@ -250,24 +245,25 @@ export default function WorkerHomeScreen() {
             {/* Municipal Badge */}
             <View style={styles.municipalBadge}>
               <View style={styles.slFlagEmblem}>
-                <Ionicons name="shield-checkmark" size={16} color="#059669" />
+                <Ionicons name="shield-checkmark" size={18} color="#059669" />
               </View>
-              <View>
-                <Text style={[styles.councilTitle, { color: theme.text }]}>{t.appTitle}</Text>
-                <Text style={[styles.councilSubtitle, { color: theme.textSecondary }]}>
+              <View style={styles.titleTextWrapper}>
+                <Text style={[styles.councilTitle, { color: theme.text }]} numberOfLines={1}>
+                  {t.appTitle}
+                </Text>
+                <Text style={[styles.councilSubtitle, { color: theme.textSecondary }]} numberOfLines={2}>
                   {t.appSubtitle}
                 </Text>
               </View>
             </View>
 
-            {/* Trilingual Switcher Pills */}
+            {/* Trilingual Switcher Pills: Sinhala (default), English, Tamil */}
             <View style={styles.langSwitchGroup}>
               {(
                 [
-                  { code: 'bilingual', label: 'සිං/EN' },
                   { code: 'si', label: 'සිං' },
-                  { code: 'ta', label: 'த' },
                   { code: 'en', label: 'EN' },
+                  { code: 'ta', label: 'த' },
                 ] as const
               ).map((item) => (
                 <Pressable
@@ -296,26 +292,29 @@ export default function WorkerHomeScreen() {
             <View style={styles.truckIconBadge}>
               <Ionicons name="bus-outline" size={18} color="#059669" />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={styles.workerInfoCol}>
               <Text style={[styles.workerTagTitle, { color: theme.text }]} numberOfLines={1}>
                 {workerName}
               </Text>
               <View style={styles.workerStatusRow}>
-                <View style={styles.activePulse} />
-                <Text style={styles.activeText}>{t.shiftActive}</Text>
-                <Text style={styles.dotSeparator}>•</Text>
-                <Ionicons
-                  name={locationStatus === 'ready' ? 'location' : 'location-outline'}
-                  size={12}
-                  color={locationStatus === 'ready' ? '#059669' : '#94a3b8'}
-                />
-                <Text style={styles.gpsStatusText}>
-                  {locationStatus === 'ready'
-                    ? t.gpsConnected
-                    : locationStatus === 'locating'
-                    ? t.gpsLocating
-                    : t.gpsOff}
-                </Text>
+                <View style={styles.statusChip}>
+                  <View style={styles.activePulse} />
+                  <Text style={styles.activeText}>{t.shiftActive}</Text>
+                </View>
+                <View style={styles.statusChip}>
+                  <Ionicons
+                    name={locationStatus === 'ready' ? 'location' : 'location-outline'}
+                    size={12}
+                    color={locationStatus === 'ready' ? '#059669' : '#94a3b8'}
+                  />
+                  <Text style={styles.gpsStatusText}>
+                    {locationStatus === 'ready'
+                      ? t.gpsConnected
+                      : locationStatus === 'locating'
+                      ? t.gpsLocating
+                      : t.gpsOff}
+                  </Text>
+                </View>
               </View>
             </View>
             <View style={styles.switchUnitButton}>
@@ -325,56 +324,86 @@ export default function WorkerHomeScreen() {
           </Pressable>
         </View>
 
-        {/* Tab Filters (High-contrast large touch targets) */}
+        {/* Tab Filters (Stacked icon + label so 3 tabs never collide on narrow screens) */}
         <View style={[styles.filterBar, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
           <Pressable
             style={[styles.filterTab, activeTab === 'available' && styles.filterTabActive]}
             onPress={() => setActiveTab('available')}>
-            <Ionicons
-              name="alert-circle"
-              size={18}
-              color={activeTab === 'available' ? '#ffffff' : '#d97706'}
-            />
+            <View style={styles.filterIconRow}>
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color={activeTab === 'available' ? '#ffffff' : '#d97706'}
+              />
+              <Text
+                style={[
+                  styles.filterCountBadge,
+                  { color: activeTab === 'available' ? '#ffffff' : '#d97706' },
+                ]}>
+                {availableTasks.length}
+              </Text>
+            </View>
             <Text
+              numberOfLines={1}
               style={[
                 styles.filterTabText,
                 { color: activeTab === 'available' ? '#ffffff' : theme.text },
               ]}>
-              {t.tabAvailable} ({availableTasks.length})
+              {t.tabAvailable}
             </Text>
           </Pressable>
 
           <Pressable
             style={[styles.filterTab, activeTab === 'my_tasks' && styles.filterTabActive]}
             onPress={() => setActiveTab('my_tasks')}>
-            <Ionicons
-              name="construct"
-              size={18}
-              color={activeTab === 'my_tasks' ? '#ffffff' : '#0284c7'}
-            />
+            <View style={styles.filterIconRow}>
+              <Ionicons
+                name="construct"
+                size={18}
+                color={activeTab === 'my_tasks' ? '#ffffff' : '#0284c7'}
+              />
+              <Text
+                style={[
+                  styles.filterCountBadge,
+                  { color: activeTab === 'my_tasks' ? '#ffffff' : '#0284c7' },
+                ]}>
+                {myTasks.length}
+              </Text>
+            </View>
             <Text
+              numberOfLines={1}
               style={[
                 styles.filterTabText,
                 { color: activeTab === 'my_tasks' ? '#ffffff' : theme.text },
               ]}>
-              {t.tabMyTasks} ({myTasks.length})
+              {t.tabMyTasks}
             </Text>
           </Pressable>
 
           <Pressable
             style={[styles.filterTab, activeTab === 'resolved' && styles.filterTabActive]}
             onPress={() => setActiveTab('resolved')}>
-            <Ionicons
-              name="checkmark-circle"
-              size={18}
-              color={activeTab === 'resolved' ? '#ffffff' : '#059669'}
-            />
+            <View style={styles.filterIconRow}>
+              <Ionicons
+                name="checkmark-circle"
+                size={18}
+                color={activeTab === 'resolved' ? '#ffffff' : '#059669'}
+              />
+              <Text
+                style={[
+                  styles.filterCountBadge,
+                  { color: activeTab === 'resolved' ? '#ffffff' : '#059669' },
+                ]}>
+                {resolvedTasks.length}
+              </Text>
+            </View>
             <Text
+              numberOfLines={1}
               style={[
                 styles.filterTabText,
                 { color: activeTab === 'resolved' ? '#ffffff' : theme.text },
               ]}>
-              {t.tabDone} ({resolvedTasks.length})
+              {t.tabDone}
             </Text>
           </Pressable>
         </View>
@@ -465,7 +494,7 @@ export default function WorkerHomeScreen() {
                     {confidencePct && (
                       <View style={styles.cardAiBadge}>
                         <Ionicons name="hardware-chip" size={13} color="#ffffff" />
-                        <Text style={styles.cardAiBadgeText}>
+                        <Text style={styles.cardAiBadgeText} numberOfLines={1}>
                           {t.aiConfidence}: {confidencePct}
                         </Text>
                       </View>
@@ -475,7 +504,7 @@ export default function WorkerHomeScreen() {
                     {distanceMeters !== null && (
                       <View style={styles.cardDistanceBadge}>
                         <Ionicons name="navigate-circle" size={14} color="#ffffff" />
-                        <Text style={styles.cardDistanceText}>
+                        <Text style={styles.cardDistanceText} numberOfLines={1}>
                           {formatDistance(distanceMeters)} {t.distanceAway}
                         </Text>
                       </View>
@@ -492,6 +521,7 @@ export default function WorkerHomeScreen() {
                           : styles.statusPillResolved,
                       ]}>
                       <Text
+                        numberOfLines={1}
                         style={[
                           styles.cardStatusText,
                           task.status === 'pending'
@@ -501,10 +531,10 @@ export default function WorkerHomeScreen() {
                             : styles.statusTextResolved,
                         ]}>
                         {task.status === 'pending'
-                          ? 'පොරොත්තු • Pending'
+                          ? t.statusPending
                           : task.status === 'in_progress'
-                          ? 'ක්‍රියාත්මකයි • In Progress'
-                          : 'පිරිසිදු කළා • Done'}
+                          ? t.statusInProgress
+                          : t.statusResolved}
                       </Text>
                     </View>
                   </View>
@@ -512,7 +542,7 @@ export default function WorkerHomeScreen() {
                   {/* Card Description & Location */}
                   <View style={styles.cardContent}>
                     <Text style={[styles.cardCaptionText, { color: theme.text }]}>
-                      {task.caption ? `"${task.caption}"` : 'කසළ වාර්තාව • Roadside Litter Report'}
+                      {task.caption ? `"${task.caption}"` : t.defaultIncidentCaption}
                     </Text>
 
                     <View style={styles.cardLocationMeta}>
@@ -537,7 +567,9 @@ export default function WorkerHomeScreen() {
                         style={styles.directionsBigButton}
                         onPress={() => openNavigation(task.latitude, task.longitude)}>
                         <Ionicons name="compass" size={20} color="#0284c7" />
-                        <Text style={styles.directionsButtonText}>{t.directions}</Text>
+                        <Text style={styles.directionsButtonText} numberOfLines={2}>
+                          {t.directions}
+                        </Text>
                       </Pressable>
 
                       {/* Primary Operation Action */}
@@ -546,7 +578,9 @@ export default function WorkerHomeScreen() {
                           style={styles.primaryActionButton}
                           onPress={() => handleStartTask(task)}>
                           <Ionicons name="play" size={20} color="#ffffff" />
-                          <Text style={styles.primaryActionText}>{t.startTask}</Text>
+                          <Text style={styles.primaryActionText} numberOfLines={2}>
+                            {t.startTask}
+                          </Text>
                         </Pressable>
                       ) : task.status === 'in_progress' ? (
                         <Pressable
@@ -557,14 +591,18 @@ export default function WorkerHomeScreen() {
                             setProofNotes('');
                           }}>
                           <Ionicons name="camera" size={22} color="#ffffff" />
-                          <Text style={styles.primaryActionText}>{t.submitProof}</Text>
+                          <Text style={styles.primaryActionText} numberOfLines={2}>
+                            {t.submitProof}
+                          </Text>
                         </Pressable>
                       ) : (
                         <Pressable
                           style={styles.viewProofButton}
                           onPress={() => setSelectedTaskId(task._id)}>
                           <Ionicons name="checkmark-done" size={20} color="#059669" />
-                          <Text style={styles.viewProofText}>{t.viewProof}</Text>
+                          <Text style={styles.viewProofText} numberOfLines={2}>
+                            {t.viewProof}
+                          </Text>
                         </Pressable>
                       )}
                     </View>
@@ -575,7 +613,7 @@ export default function WorkerHomeScreen() {
           </ScrollView>
         )}
 
-        {/* Task Detail & Proof Modal (Designed for outdoor field use) */}
+        {/* Task Detail & Proof Modal */}
         <Modal
           visible={!!selectedTask}
           animationType="slide"
@@ -585,8 +623,8 @@ export default function WorkerHomeScreen() {
             <View style={[styles.modalSheet, { backgroundColor: theme.backgroundElement }]}>
               {/* Modal Header */}
               <View style={[styles.sheetHeader, { borderBottomColor: theme.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.sheetTitle, { color: theme.text }]}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.sheetTitle, { color: theme.text }]} numberOfLines={1}>
                     {selectedTask?.status === 'resolved'
                       ? t.verificationTitle
                       : t.taskDetailTitle}
@@ -611,7 +649,7 @@ export default function WorkerHomeScreen() {
                     {/* Location & Navigation Card */}
                     <View style={[styles.modalLocationCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
                       <View style={styles.modalLocHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
                           <Ionicons name="location" size={18} color="#dc2626" />
                           <Text style={[styles.modalLocTitle, { color: theme.text }]}>
                             {t.litterLocation}
@@ -668,12 +706,12 @@ export default function WorkerHomeScreen() {
                           {t.proofInstructions}
                         </Text>
 
-                        {/* Glove-Sized Photo Actions */}
-                        <View style={styles.cameraActionButtonsRow}>
+                        {/* Stacked Full-Width Glove-Sized Photo Actions (Zero Overlap) */}
+                        <View style={styles.cameraActionButtonsCol}>
                           <Pressable
                             style={[styles.bigPhotoButton, styles.takePhotoGreenBtn]}
                             onPress={handleTakePhoto}>
-                            <Ionicons name="camera" size={26} color="#ffffff" />
+                            <Ionicons name="camera" size={24} color="#ffffff" />
                             <Text style={styles.bigPhotoBtnText}>{t.takePhoto}</Text>
                           </Pressable>
 
@@ -771,7 +809,7 @@ export default function WorkerHomeScreen() {
                             contentFit="cover"
                           />
                         ) : (
-                          <Text style={{ color: theme.textSecondary }}>No proof photo stored</Text>
+                          <Text style={{ color: theme.textSecondary }}>{t.noPhoto}</Text>
                         )}
                         {selectedTask.resolutionNotes && (
                           <View style={[styles.verifiedNotesCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
@@ -817,7 +855,7 @@ export default function WorkerHomeScreen() {
                 {t.switchWorker}
               </Text>
               <Text style={[styles.workerModalSubtext, { color: theme.textSecondary }]}>
-                Select municipal truck unit or enter worker ID for collection logs:
+                {t.selectUnitDesc}
               </Text>
 
               {/* Sri Lankan Council Presets */}
@@ -857,7 +895,7 @@ export default function WorkerHomeScreen() {
                   styles.customWorkerField,
                   { backgroundColor: theme.background, borderColor: theme.border, color: theme.text },
                 ]}
-                placeholder="Or custom: e.g. CMC Truck 15 - Borella"
+                placeholder={t.customUnitPlaceholder}
                 placeholderTextColor={theme.textSecondary}
                 value={customWorkerInput}
                 onChangeText={setCustomWorkerInput}
@@ -867,7 +905,7 @@ export default function WorkerHomeScreen() {
                 <Pressable
                   style={[styles.modalCancelBtn, { borderColor: theme.border }]}
                   onPress={() => setIsEditingWorker(false)}>
-                  <Text style={{ color: theme.textSecondary, fontWeight: '700' }}>Cancel</Text>
+                  <Text style={{ color: theme.textSecondary, fontWeight: '700' }}>{t.cancel}</Text>
                 </Pressable>
                 <Pressable
                   style={styles.modalSaveBtn}
@@ -878,7 +916,7 @@ export default function WorkerHomeScreen() {
                     }
                     setIsEditingWorker(false);
                   }}>
-                  <Text style={{ color: '#ffffff', fontWeight: '800' }}>Confirm Unit</Text>
+                  <Text style={{ color: '#ffffff', fontWeight: '800' }}>{t.confirmUnit}</Text>
                 </Pressable>
               </View>
             </View>
@@ -906,7 +944,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     marginTop: Spacing.two,
     marginBottom: Spacing.two,
-    gap: Spacing.two,
+    gap: Spacing.three,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -914,22 +952,30 @@ const styles = StyleSheet.create({
   },
   headerTopRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.two,
   },
   municipalBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     flex: 1,
+    minWidth: 180,
+  },
+  titleTextWrapper: {
+    flex: 1,
+    minWidth: 0,
   },
   slFlagEmblem: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   councilTitle: {
     fontSize: 16,
@@ -939,18 +985,23 @@ const styles = StyleSheet.create({
   councilSubtitle: {
     fontSize: 11,
     fontWeight: '500',
+    marginTop: 1,
   },
   langSwitchGroup: {
     flexDirection: 'row',
     backgroundColor: '#e2e8f0',
-    padding: 3,
-    borderRadius: 10,
-    gap: 2,
+    padding: 4,
+    borderRadius: 12,
+    gap: 4,
+    flexShrink: 0,
   },
   langPill: {
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 8,
+    minHeight: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   langPillActive: {
     backgroundColor: '#059669',
@@ -960,7 +1011,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   langPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   langPillTextActive: {
@@ -980,6 +1031,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
+  },
+  workerInfoCol: {
+    flex: 1,
+    minWidth: 0,
   },
   workerTagTitle: {
     fontSize: 13,
@@ -987,9 +1043,15 @@ const styles = StyleSheet.create({
   },
   workerStatusRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 3,
+  },
+  statusChip: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 2,
   },
   activePulse: {
     width: 8,
@@ -1002,10 +1064,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#059669',
   },
-  dotSeparator: {
-    fontSize: 10,
-    color: '#94a3b8',
-  },
   gpsStatusText: {
     fontSize: 11,
     color: '#64748b',
@@ -1014,33 +1072,36 @@ const styles = StyleSheet.create({
   switchUnitButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 4,
     backgroundColor: '#e0f2fe',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    flexShrink: 0,
   },
   switchUnitText: {
     color: '#0284c7',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   filterBar: {
     flexDirection: 'row',
-    padding: 4,
-    borderRadius: 14,
+    padding: 6,
+    borderRadius: 16,
     borderWidth: 1.5,
-    marginBottom: Spacing.two,
-    gap: 4,
+    marginBottom: Spacing.three,
+    gap: 6,
   },
   filterTab: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
-    borderRadius: 10,
-    gap: 6,
+    paddingHorizontal: 6,
+    minHeight: 58,
+    borderRadius: 12,
+    gap: 4,
   },
   filterTabActive: {
     backgroundColor: '#059669',
@@ -1049,9 +1110,19 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 3,
   },
+  filterIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  filterCountBadge: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
   filterTabText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -1129,6 +1200,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 10,
     left: 10,
+    maxWidth: '48%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -1141,11 +1213,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '800',
+    flexShrink: 1,
   },
   cardDistanceBadge: {
     position: 'absolute',
     bottom: 10,
     left: 10,
+    maxWidth: '80%',
     backgroundColor: 'rgba(15, 23, 42, 0.9)',
     flexDirection: 'row',
     alignItems: 'center',
@@ -1158,11 +1232,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+    flexShrink: 1,
   },
   cardStatusPill: {
     position: 'absolute',
     top: 10,
     right: 10,
+    maxWidth: '45%',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
@@ -1200,8 +1276,10 @@ const styles = StyleSheet.create({
   },
   cardLocationMeta: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   metaLocationItem: {
     flexDirection: 'row',
@@ -1224,14 +1302,16 @@ const styles = StyleSheet.create({
   },
   cardButtonsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
+    alignItems: 'stretch',
+    gap: 12,
     paddingTop: Spacing.three,
     borderTopWidth: 1.5,
   },
   directionsBigButton: {
     flex: 1,
-    height: TouchTarget.standard,
+    minHeight: TouchTarget.standard,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1245,10 +1325,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#0284c7',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   primaryActionButton: {
-    flex: 1.2,
-    height: TouchTarget.standard,
+    flex: 1.15,
+    minHeight: TouchTarget.standard,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1264,13 +1348,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#0284c7',
   },
   primaryActionText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#ffffff',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   viewProofButton: {
-    flex: 1.2,
-    height: TouchTarget.standard,
+    flex: 1.15,
+    minHeight: TouchTarget.standard,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1284,6 +1372,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#047857',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   modalShade: {
     flex: 1,
@@ -1303,6 +1393,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.three,
     borderBottomWidth: 1.5,
+    gap: 10,
   },
   sheetTitle: {
     fontSize: 18,
@@ -1314,7 +1405,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   sheetCloseBtn: {
-    padding: 2,
+    padding: 4,
+    flexShrink: 0,
   },
   sheetScroll: {
     flex: 1,
@@ -1328,12 +1420,14 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     borderRadius: 16,
     borderWidth: 1.5,
-    gap: 6,
+    gap: 8,
   },
   modalLocHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   modalLocTitle: {
     fontSize: 14,
@@ -1345,8 +1439,8 @@ const styles = StyleSheet.create({
     gap: 5,
     backgroundColor: '#e0f2fe',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
   openMapsPillText: {
     color: '#0284c7',
@@ -1393,18 +1487,20 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     fontWeight: '500',
   },
-  cameraActionButtonsRow: {
-    flexDirection: 'row',
-    gap: Spacing.two,
+  cameraActionButtonsCol: {
+    flexDirection: 'column',
+    gap: 12,
     marginTop: 4,
   },
   bigPhotoButton: {
-    flex: 1,
-    height: TouchTarget.large,
+    width: '100%',
+    minHeight: TouchTarget.standard,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 10,
     borderRadius: 16,
   },
   takePhotoGreenBtn: {
@@ -1416,7 +1512,7 @@ const styles = StyleSheet.create({
   },
   bigPhotoBtnText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
   },
   uploadPhotoBlueBtn: {
@@ -1425,7 +1521,7 @@ const styles = StyleSheet.create({
   },
   uploadPhotoBtnText: {
     color: '#0284c7',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
   },
   previewBox: {
@@ -1448,7 +1544,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 20,
   },
   retakeBadgeText: {
@@ -1463,16 +1559,16 @@ const styles = StyleSheet.create({
   quickChipsGroup: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
   },
   quickChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
   },
   quickChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   notesField: {
@@ -1484,7 +1580,9 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   finalSubmitButton: {
-    height: TouchTarget.large,
+    minHeight: TouchTarget.large,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1524,7 +1622,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   claimJobBigButton: {
-    height: TouchTarget.large,
+    minHeight: TouchTarget.large,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

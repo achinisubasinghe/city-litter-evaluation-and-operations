@@ -6,29 +6,34 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { SymbolView } from 'expo-symbols';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useLanguage } from '@/constants/LanguageContext';
 
-import { ExternalLink } from './external-link';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 export default function AppTabs() {
+  const scheme = useColorScheme();
+  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const { t } = useLanguage();
+
   return (
-    <Tabs>
-      <TabSlot style={{ height: '100%' }} />
+    <Tabs style={{ flex: 1, backgroundColor: colors.background }}>
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="index" href="/" asChild>
-            <TabButton>කාර්යයන් • Tasks</TabButton>
+            <TabButton>{t.navTasks}</TabButton>
           </TabTrigger>
           <TabTrigger name="history" href="/history" asChild>
-            <TabButton>ඉතිහාසය • History</TabButton>
+            <TabButton>{t.navHistory}</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>
+      <View style={{ flex: 1 }}>
+        <TabSlot style={{ flex: 1 }} />
+      </View>
     </Tabs>
   );
 }
@@ -61,11 +66,13 @@ export function CustomTabList(props: TabListProps) {
             <ThemedText style={{ fontSize: 13 }}>🇱🇰</ThemedText>
           </View>
           <ThemedText type="smallBold" style={styles.brandText}>
-            CLEO Field Ops
+            CLEO
           </ThemedText>
         </View>
 
-        {props.children}
+        <View style={styles.tabButtonsGroup}>
+          {props.children}
+        </View>
       </ThemedView>
     </View>
   );
@@ -73,38 +80,40 @@ export function CustomTabList(props: TabListProps) {
 
 const styles = StyleSheet.create({
   tabListContainer: {
-    position: 'absolute',
     width: '100%',
-    padding: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+    paddingBottom: Spacing.one,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
+    zIndex: 10,
   },
   innerContainer: {
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Spacing.five,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 16,
     borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     flexGrow: 1,
     gap: Spacing.two,
     maxWidth: MaxContentWidth,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   brandGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginRight: 'auto',
   },
   brandIconCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
@@ -112,13 +121,20 @@ const styles = StyleSheet.create({
   brandText: {
     fontWeight: '800',
   },
+  tabButtonsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   pressed: {
     opacity: 0.7,
   },
   tabButtonView: {
-    paddingVertical: Spacing.one,
+    paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
+    borderRadius: 12,
+    minHeight: 40,
+    justifyContent: 'center',
   },
   tabButtonActive: {
     backgroundColor: '#ecfdf5',

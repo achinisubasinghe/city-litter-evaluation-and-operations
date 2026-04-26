@@ -18,12 +18,11 @@ import { api } from '@convex/_generated/api';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Spacing, MaxContentWidth, BottomTabInset, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { getI18n, Language } from '@/constants/i18n';
+import { useLanguage } from '@/constants/LanguageContext';
 
 export default function HistoryScreen() {
   const theme = useTheme();
-  const [lang, setLang] = useState<Language>('bilingual');
-  const t = getI18n(lang);
+  const { lang, setLang, t } = useLanguage();
 
   const reports = useQuery(api.reports.listReports, { limit: 100 });
   const [selectedImage, setSelectedImage] = useState<{ url: string; title: string } | null>(null);
@@ -40,7 +39,7 @@ export default function HistoryScreen() {
               <View style={styles.historyIconBadge}>
                 <Ionicons name="checkmark-done-circle" size={24} color="#059669" />
               </View>
-              <View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[styles.screenHeading, { color: theme.text }]}>
                   {t.historyTitle}
                 </Text>
@@ -54,10 +53,9 @@ export default function HistoryScreen() {
             <View style={styles.langPills}>
               {(
                 [
-                  { code: 'bilingual', label: 'සිං/EN' },
                   { code: 'si', label: 'සිං' },
-                  { code: 'ta', label: 'த' },
                   { code: 'en', label: 'EN' },
+                  { code: 'ta', label: 'த' },
                 ] as const
               ).map((item) => (
                 <Pressable
@@ -154,7 +152,7 @@ export default function HistoryScreen() {
                   <View style={styles.cardHeaderRow}>
                     <View style={styles.stampBadge}>
                       <Ionicons name="shield-checkmark" size={14} color="#059669" />
-                      <Text style={styles.stampBadgeText}>සත්‍යාපනය කළා • Verified</Text>
+                      <Text style={styles.stampBadgeText}>{t.verifiedStamp}</Text>
                     </View>
                     <Text style={[styles.dateText, { color: theme.textSecondary }]}>
                       {resolvedDate}
@@ -311,12 +309,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
   },
   headerTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     flex: 1,
+    minWidth: 180,
   },
   historyIconBadge: {
     width: 36,
@@ -336,10 +337,11 @@ const styles = StyleSheet.create({
   },
   langPills: {
     flexDirection: 'row',
+    flexShrink: 0,
     backgroundColor: '#e2e8f0',
-    padding: 3,
+    padding: 4,
     borderRadius: 10,
-    gap: 2,
+    gap: 4,
   },
   langPill: {
     paddingVertical: 5,
@@ -432,6 +434,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
   },
   stampBadge: {
     flexDirection: 'row',
@@ -529,6 +533,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
     paddingTop: Spacing.two,
     borderTopWidth: 1.5,
   },
@@ -537,17 +543,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     flex: 1,
+    minWidth: 120,
   },
   workerMetaName: {
     fontSize: 12,
     fontWeight: '700',
   },
   mapLinkBtn: {
-    height: 38,
+    minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: 5,
     paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 10,
     backgroundColor: '#e0f2fe',
     borderWidth: 1,

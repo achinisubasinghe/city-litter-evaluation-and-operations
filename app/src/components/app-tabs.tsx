@@ -2,10 +2,12 @@ import { NativeTabs } from 'expo-router/native-tabs';
 import { useColorScheme } from 'react-native';
 
 import { Colors } from '@/constants/theme';
+import { useLanguage } from '@/constants/LanguageContext';
 
 export default function AppTabs() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const { t } = useLanguage();
 
   return (
     <NativeTabs
@@ -13,7 +15,7 @@ export default function AppTabs() {
       indicatorColor={colors.backgroundElement}
       labelStyle={{ selected: { color: colors.primary } }}>
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>කාර්යයන් • Tasks</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t.navTasks}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/home.png')}
           renderingMode="template"
@@ -21,7 +23,7 @@ export default function AppTabs() {
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="history">
-        <NativeTabs.Trigger.Label>ඉතිහාසය • History</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t.navHistory}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/explore.png')}
           renderingMode="template"
