@@ -46,6 +46,8 @@ export interface I18nStrings {
   takePhoto: string;
   uploadPhoto: string;
   retakePhoto: string;
+  photoReadyBadge: string;
+  proofUploadedBanner: string;
   workNotesLabel: string;
   workNotesPlaceholder: string;
   submitAndComplete: string;
@@ -130,6 +132,8 @@ const strings: Record<Language, I18nStrings> = {
     takePhoto: 'ඡායාරූපය ගන්න',
     uploadPhoto: 'ගැලරියෙන් තෝරන්න',
     retakePhoto: 'නැවත ගන්න',
+    photoReadyBadge: 'ඡායාරූපය සූදානම්',
+    proofUploadedBanner: 'සාක්ෂි ඡායාරූපය සාර්ථකව උඩුගත කරන ලදී!',
     workNotesLabel: 'කෙටි සටහන (විකල්ප):',
     workNotesPlaceholder: 'උදා: ප්ලාස්ටික් බෑග් 2ක් ඉවත් කර ලොරියට පැටවුවා...',
     submitAndComplete: 'සාක්ෂි යවා අවසන් කරන්න',
@@ -208,6 +212,8 @@ const strings: Record<Language, I18nStrings> = {
     takePhoto: 'படம் எடு',
     uploadPhoto: 'கேலரியில் இருந்து',
     retakePhoto: 'மீண்டும் எடு',
+    photoReadyBadge: 'புகைப்படம் தயார்',
+    proofUploadedBanner: 'சான்று புகைப்படம் வெற்றிகரமாக பதிவேற்றப்பட்டது!',
     workNotesLabel: 'குறிப்புகள் (விருப்பத்தேர்வு):',
     workNotesPlaceholder: 'எ.கா: பிளாஸ்டிக் அகற்றப்பட்டு லாரியில் ஏற்றப்பட்டது...',
     submitAndComplete: 'சான்று சமர்ப்பித்து முடிக்க',
@@ -286,6 +292,8 @@ const strings: Record<Language, I18nStrings> = {
     takePhoto: 'Take Photo',
     uploadPhoto: 'Upload Photo',
     retakePhoto: 'Retake Photo',
+    photoReadyBadge: 'Photo Ready',
+    proofUploadedBanner: 'Proof photo uploaded & task verified!',
     workNotesLabel: 'Work Notes (Optional):',
     workNotesPlaceholder: 'e.g. Collected 2 bags of plastic bottles, loaded onto truck...',
     submitAndComplete: 'Submit Proof & Finish Task',

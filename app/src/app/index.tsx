@@ -65,8 +65,14 @@ export default function WorkerHomeScreen() {
 
   // Proof Flow State
   const [proofImageUri, setProofImageUri] = useState<string | null>(null);
+  const [proofMimeType, setProofMimeType] = useState<string | null>(null);
   const [proofNotes, setProofNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [proofError, setProofError] = useState<string | null>(null);
+  const [uploadSuccessInfo, setUploadSuccessInfo] = useState<{
+    reportId: Id<'reports'>;
+    previewUri: string;
+  } | null>(null);
 
   // Request worker GPS location on mount
   useEffect(() => {
@@ -135,6 +141,8 @@ export default function WorkerHomeScreen() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setProofImageUri(result.assets[0].uri);
+        setProofMimeType(result.assets[0].mimeType ?? 'image/jpeg');
+        setProofError(null);
       }
     } catch (err) {
       console.error('Failed to take photo:', err);
@@ -159,6 +167,8 @@ export default function WorkerHomeScreen() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setProofImageUri(result.assets[0].uri);
+        setProofMimeType(result.assets[0].mimeType ?? 'image/jpeg');
+        setProofError(null);
       }
     } catch (err) {
       console.error('Failed to select photo:', err);
@@ -170,19 +180,27 @@ export default function WorkerHomeScreen() {
   const handleSubmitProof = async () => {
     if (!selectedTask) return;
     if (!proofImageUri) {
-      Alert.alert(t.photoRequiredTitle, t.photoRequiredMsg);
+      setProofError(t.photoRequiredMsg);
+      if (Platform.OS !== 'web') {
+        Alert.alert(t.photoRequiredTitle, t.photoRequiredMsg);
+      }
       return;
     }
 
     setIsSubmitting(true);
+    setProofError(null);
     try {
       const uploadUrl = await generateUploadUrl();
       const response = await fetch(proofImageUri);
       const blob = await response.blob();
+      if (!blob || blob.size === 0) {
+        throw new Error('Selected image is empty.');
+      }
 
+      const contentType = proofMimeType || blob.type || 'image/jpeg';
       const uploadRes = await fetch(uploadUrl, {
         method: 'POST',
-        headers: { 'Content-Type': blob.type || 'image/jpeg' },
+        headers: { 'Content-Type': contentType },
         body: blob,
       });
 
@@ -190,7 +208,11 @@ export default function WorkerHomeScreen() {
         throw new Error(`Failed to upload photo: ${uploadRes.statusText}`);
       }
 
-      const { storageId } = await uploadRes.json();
+      const uploadJson = await uploadRes.json();
+      const storageId = uploadJson?.storageId;
+      if (!storageId) {
+        throw new Error('Missing storageId from upload response.');
+      }
 
       await resolveReport({
         reportId: selectedTask._id,
@@ -199,14 +221,25 @@ export default function WorkerHomeScreen() {
         notes: proofNotes.trim() ? proofNotes.trim() : t.quickNote3,
       });
 
-      Alert.alert(t.successAlertTitle, t.successAlertMsg);
+      const uploadedUri = proofImageUri;
+      const completedTaskId = selectedTask._id;
+      setUploadSuccessInfo({ reportId: completedTaskId, previewUri: uploadedUri });
       setProofImageUri(null);
+      setProofMimeType(null);
       setProofNotes('');
       setSelectedTaskId(null);
       setActiveTab('resolved');
+
+      if (Platform.OS !== 'web') {
+        Alert.alert(t.successAlertTitle, t.successAlertMsg);
+      }
     } catch (err) {
       console.error('Proof submission error:', err);
-      Alert.alert('Submission Error', 'Failed to submit proof. Please try again.');
+      const msg = 'Failed to submit proof. Please try again.';
+      setProofError(msg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Submission Error', msg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -408,6 +441,32 @@ export default function WorkerHomeScreen() {
           </Pressable>
         </View>
 
+        {/* Proof Upload Success Banner */}
+        {uploadSuccessInfo && (
+          <View style={styles.uploadSuccessBanner}>
+            <Image
+              source={{ uri: uploadSuccessInfo.previewUri }}
+              style={styles.uploadSuccessThumb}
+              contentFit="cover"
+            />
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="checkmark-circle" size={18} color="#059669" />
+                <Text style={styles.uploadSuccessTitle}>{t.successAlertTitle}</Text>
+              </View>
+              <Text style={styles.uploadSuccessMsg} numberOfLines={2}>
+                {t.proofUploadedBanner}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setUploadSuccessInfo(null)}
+              style={styles.uploadSuccessClose}
+              accessibilityLabel="Dismiss upload notification">
+              <Ionicons name="close" size={18} color="#065f46" />
+            </Pressable>
+          </View>
+        )}
+
         {/* Task Feed */}
         {reports === undefined ? (
           <View style={styles.loadingContainer}>
@@ -474,7 +533,39 @@ export default function WorkerHomeScreen() {
                   ]}>
                   {/* Photo Preview & Overlaid Badges */}
                   <View style={styles.cardMediaBox}>
-                    {task.imageUrl ? (
+                    {task.status === 'resolved' && task.proofImageUrl ? (
+                      <View style={styles.cardSplitMedia}>
+                        <View style={styles.cardSplitHalf}>
+                          {task.imageUrl ? (
+                            <Image
+                              source={{ uri: task.imageUrl }}
+                              style={styles.cardImage}
+                              contentFit="cover"
+                              transition={200}
+                            />
+                          ) : (
+                            <View style={[styles.cardImagePlaceholder, { backgroundColor: theme.backgroundSelected }]}>
+                              <Ionicons name="image-outline" size={28} color={theme.textSecondary} />
+                            </View>
+                          )}
+                          <View style={styles.splitLabelBefore}>
+                            <Text style={styles.splitLabelText}>{t.beforeLitter}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.cardSplitDivider} />
+                        <View style={styles.cardSplitHalf}>
+                          <Image
+                            source={{ uri: task.proofImageUrl }}
+                            style={styles.cardImage}
+                            contentFit="cover"
+                            transition={200}
+                          />
+                          <View style={styles.splitLabelAfter}>
+                            <Text style={styles.splitLabelText}>{t.afterCleaned}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    ) : task.imageUrl ? (
                       <Image
                         source={{ uri: task.imageUrl }}
                         style={styles.cardImage}
@@ -731,16 +822,34 @@ export default function WorkerHomeScreen() {
                         {proofImageUri ? (
                           <View style={styles.previewBox}>
                             <Image
+                              key={proofImageUri}
                               source={{ uri: proofImageUri }}
                               style={styles.previewImg}
                               contentFit="cover"
+                              onError={() =>
+                                setProofError('Preview failed to render, but you can still retake or re-select.')
+                              }
                             />
+                            <View style={styles.photoReadyPill}>
+                              <Ionicons name="checkmark-circle" size={14} color="#ffffff" />
+                              <Text style={styles.photoReadyText}>{t.photoReadyBadge}</Text>
+                            </View>
                             <Pressable
                               style={styles.retakeFloatingBadge}
-                              onPress={() => setProofImageUri(null)}>
+                              onPress={() => {
+                                setProofImageUri(null);
+                                setProofMimeType(null);
+                              }}>
                               <Ionicons name="refresh" size={16} color="#ffffff" />
                               <Text style={styles.retakeBadgeText}>{t.retakePhoto}</Text>
                             </Pressable>
+                          </View>
+                        ) : null}
+
+                        {proofError ? (
+                          <View style={styles.proofErrorBox}>
+                            <Ionicons name="alert-circle" size={16} color="#dc2626" />
+                            <Text style={styles.proofErrorText}>{proofError}</Text>
                           </View>
                         ) : null}
 
@@ -1707,5 +1816,108 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 10,
     backgroundColor: '#059669',
+  },
+  uploadSuccessBanner: {
+    marginHorizontal: Spacing.three,
+    marginBottom: Spacing.two,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1.5,
+    borderColor: '#10b981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  uploadSuccessThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#d1fae5',
+  },
+  uploadSuccessTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065f46',
+  },
+  uploadSuccessMsg: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#047857',
+    marginTop: 2,
+  },
+  uploadSuccessClose: {
+    padding: 6,
+  },
+  cardSplitMedia: {
+    flexDirection: 'row',
+    width: '100%',
+    height: '100%',
+  },
+  cardSplitHalf: {
+    flex: 1,
+    height: '100%',
+    position: 'relative',
+  },
+  cardSplitDivider: {
+    width: 2,
+    height: '100%',
+    backgroundColor: '#0f172a',
+  },
+  splitLabelBefore: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  splitLabelAfter: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(5, 150, 105, 0.92)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  splitLabelText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  photoReadyPill: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(5, 150, 105, 0.92)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  photoReadyText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  proofErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+  },
+  proofErrorText: {
+    color: '#b91c1c',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
   },
 });
