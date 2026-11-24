@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "vite",
     "web": "vite",
+    "citizen": "bun --cwd citizen-web dev",
+    "citizen:build": "bun --cwd citizen-web build",
+    "citizen:start": "bun --cwd citizen-web start",
+    "citizen:test": "bun --cwd citizen-web test",
     "build": "vite build",
     "preview": "vite preview",
     "app": "bun --cwd app start",

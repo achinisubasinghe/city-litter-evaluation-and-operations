@@ -1,5 +1,79 @@
 import { query, mutation, action } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+
+const wasteCategoryValidator = v.union(
+  v.literal("plastic"),
+  v.literal("organic"),
+  v.literal("paper"),
+  v.literal("metal"),
+  v.literal("glass"),
+  v.literal("bulky")
+);
+
+const reportStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("in_progress"),
+  v.literal("resolved"),
+  v.literal("rejected")
+);
+
+const reportSourceValidator = v.union(
+  v.literal("citizen_web"),
+  v.literal("telegram_bot"),
+  v.literal("whatsapp_bot"),
+  v.literal("edge_unit")
+);
+
+const citizenOptionalFields = {
+  ticketCode: v.optional(v.string()),
+  wasteCategory: v.optional(wasteCategoryValidator),
+  priority: v.optional(v.union(v.literal("normal"), v.literal("high"))),
+  reportCount: v.optional(v.number()),
+  clusterRadiusMeters: v.optional(v.number()),
+  mergedPhotoStorageIds: v.optional(v.array(v.id("_storage"))),
+  mergedReporterContacts: v.optional(v.array(v.string())),
+  addressLabel: v.optional(v.string()),
+  landmarkNote: v.optional(v.string()),
+  localAuthority: v.optional(v.string()),
+  reporterContact: v.optional(v.string()),
+  source: v.optional(reportSourceValidator),
+  escalatedAt: v.optional(v.number()),
+};
+
+/**
+ * Computes WGS-84 great-circle Haversine distance in meters between two GPS coordinates.
+ */
+function haversineDistanceMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Normalizes a citizen-entered ticket lookup string (e.g. "#cleo-1038" or "1038") into "CLEO-1038".
+ */
+function normalizeTicketCode(raw: string): string {
+  const trimmed = raw.trim().toUpperCase().replace(/^#/, "");
+  if (/^\d+$/.test(trimmed)) {
+    return `CLEO-${trimmed}`;
+  }
+  return trimmed;
+}
 
 /**
  * Downloads a photo from a given URL (e.g. Telegram File API)
@@ -257,6 +331,7 @@ export const listReports = query({
       assignedWorkerId: v.optional(v.string()),
       assignedWorkerName: v.optional(v.string()),
       assignedAt: v.optional(v.number()),
+      ...citizenOptionalFields,
     })
   ),
   handler: async (ctx, args) => {
@@ -322,6 +397,7 @@ export const getReport = query({
       assignedWorkerId: v.optional(v.string()),
       assignedWorkerName: v.optional(v.string()),
       assignedAt: v.optional(v.number()),
+      ...citizenOptionalFields,
     })
   ),
   handler: async (ctx, args) => {
@@ -420,6 +496,14 @@ export const getReportsByUser = query({
       offsetMeters: v.optional(v.number()),
       qualityScore: v.optional(v.number()),
       blurScore: v.optional(v.number()),
+      proofPhotoStorageId: v.optional(v.id("_storage")),
+      resolvedAt: v.optional(v.number()),
+      resolvedBy: v.optional(v.string()),
+      resolutionNotes: v.optional(v.string()),
+      assignedWorkerId: v.optional(v.string()),
+      assignedWorkerName: v.optional(v.string()),
+      assignedAt: v.optional(v.number()),
+      ...citizenOptionalFields,
     })
   ),
   handler: async (ctx, args) => {
@@ -590,6 +674,355 @@ export const createReportFromEdge = mutation({
       blurScore: args.blurScore,
     });
     return { reportId, status: "created" as const };
+  },
+});
+
+const citizenReportReturnValidator = v.object({
+  _id: v.id("reports"),
+  _creationTime: v.number(),
+  userId: v.string(),
+  userName: v.optional(v.string()),
+  chatId: v.string(),
+  photoStorageId: v.id("_storage"),
+  imageUrl: v.union(v.string(), v.null()),
+  proofPhotoStorageId: v.optional(v.id("_storage")),
+  proofImageUrl: v.union(v.string(), v.null()),
+  mergedImageUrls: v.array(v.string()),
+  latitude: v.number(),
+  longitude: v.number(),
+  confidence: v.optional(v.number()),
+  status: reportStatusValidator,
+  caption: v.optional(v.string()),
+  createdAt: v.number(),
+  rawLatitude: v.optional(v.number()),
+  rawLongitude: v.optional(v.number()),
+  isLocationCorrected: v.optional(v.boolean()),
+  correctionMethod: v.optional(v.string()),
+  speedKmh: v.optional(v.number()),
+  heading: v.optional(v.number()),
+  offsetMeters: v.optional(v.number()),
+  qualityScore: v.optional(v.number()),
+  blurScore: v.optional(v.number()),
+  resolvedAt: v.optional(v.number()),
+  resolvedBy: v.optional(v.string()),
+  resolutionNotes: v.optional(v.string()),
+  assignedWorkerId: v.optional(v.string()),
+  assignedWorkerName: v.optional(v.string()),
+  assignedAt: v.optional(v.number()),
+  ...citizenOptionalFields,
+});
+
+/**
+ * Citizen crowdsource report submission with 20m Haversine spatial clustering.
+ * - If an active (pending / in_progress) report exists within clusterRadiusMeters (default 20m),
+ *   merges this report into it, increments reportCount, and escalates priority to "high" (Outcome B).
+ * - Otherwise, creates a new ticket with a unique #CLEO-XXXX ticketCode and "normal" priority (Outcome A).
+ */
+export const submitCitizenReport = mutation({
+  args: {
+    photoStorageId: v.id("_storage"),
+    latitude: v.number(),
+    longitude: v.number(),
+    confidence: v.optional(v.number()),
+    wasteCategory: wasteCategoryValidator,
+    addressLabel: v.optional(v.string()),
+    landmarkNote: v.optional(v.string()),
+    localAuthority: v.optional(v.string()),
+    caption: v.optional(v.string()),
+    reporterContact: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    userName: v.optional(v.string()),
+    clusterRadiusMeters: v.optional(v.number()),
+  },
+  returns: v.object({
+    outcome: v.union(v.literal("new"), v.literal("clustered")),
+    reportId: v.id("reports"),
+    ticketCode: v.string(),
+    reportCount: v.number(),
+    distanceMeters: v.union(v.number(), v.null()),
+    priority: v.union(v.literal("normal"), v.literal("high")),
+    wasteCategory: wasteCategoryValidator,
+    localAuthority: v.union(v.string(), v.null()),
+    addressLabel: v.union(v.string(), v.null()),
+    status: reportStatusValidator,
+  }),
+  handler: async (ctx, args) => {
+    const radius = args.clusterRadiusMeters ?? 20;
+    const now = Date.now();
+
+    const [pendingReports, inProgressReports] = await Promise.all([
+      ctx.db
+        .query("reports")
+        .withIndex("by_status", (q) => q.eq("status", "pending"))
+        .collect(),
+      ctx.db
+        .query("reports")
+        .withIndex("by_status", (q) => q.eq("status", "in_progress"))
+        .collect(),
+    ]);
+
+    const activeReports = [...pendingReports, ...inProgressReports];
+
+    let closestReport: (typeof activeReports)[number] | null = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    for (const candidate of activeReports) {
+      const dist = haversineDistanceMeters(
+        args.latitude,
+        args.longitude,
+        candidate.latitude,
+        candidate.longitude
+      );
+      if (dist <= radius && dist < closestDistance) {
+        closestDistance = dist;
+        closestReport = candidate;
+      }
+    }
+
+    // Helper to allocate a collision-free #CLEO-XXXX ticket code
+    const generateNextTicketCode = async (): Promise<string> => {
+      const recent = await ctx.db.query("reports").order("desc").take(200);
+      let maxNum = 1000;
+      for (const r of recent) {
+        if (r.ticketCode) {
+          const match = /CLEO-(\d+)/i.exec(r.ticketCode);
+          if (match) {
+            const parsed = Number.parseInt(match[1], 10);
+            if (!Number.isNaN(parsed) && parsed > maxNum) {
+              maxNum = parsed;
+            }
+          }
+        }
+      }
+      let nextNum = Math.max(maxNum + 1, 1001 + recent.length);
+      for (let attempt = 0; attempt < 25; attempt++) {
+        const candidateCode = `CLEO-${nextNum + attempt}`;
+        const existing = await ctx.db
+          .query("reports")
+          .withIndex("by_ticketCode", (q) => q.eq("ticketCode", candidateCode))
+          .first();
+        if (!existing) {
+          return candidateCode;
+        }
+      }
+      return `CLEO-${Math.floor(1000 + (now % 9000))}`;
+    };
+
+    if (closestReport) {
+      const ticketCode =
+        closestReport.ticketCode ?? (await generateNextTicketCode());
+      const nextCount = (closestReport.reportCount ?? 1) + 1;
+      const existingPhotos: Id<"_storage">[] =
+        closestReport.mergedPhotoStorageIds &&
+        closestReport.mergedPhotoStorageIds.length > 0
+          ? [...closestReport.mergedPhotoStorageIds]
+          : [closestReport.photoStorageId];
+      existingPhotos.push(args.photoStorageId);
+
+      const existingContacts: string[] = [
+        ...(closestReport.mergedReporterContacts ??
+          (closestReport.reporterContact
+            ? [closestReport.reporterContact]
+            : [])),
+      ];
+      const trimmedContact = args.reporterContact?.trim();
+      if (trimmedContact && !existingContacts.includes(trimmedContact)) {
+        existingContacts.push(trimmedContact);
+      }
+
+      const resolvedCategory = closestReport.wasteCategory ?? args.wasteCategory;
+      const resolvedAuthority =
+        closestReport.localAuthority ?? args.localAuthority;
+      const resolvedAddress = closestReport.addressLabel ?? args.addressLabel;
+
+      await ctx.db.patch(closestReport._id, {
+        ticketCode,
+        priority: "high",
+        reportCount: nextCount,
+        clusterRadiusMeters: radius,
+        mergedPhotoStorageIds: existingPhotos,
+        mergedReporterContacts: existingContacts,
+        wasteCategory: resolvedCategory,
+        localAuthority: resolvedAuthority,
+        addressLabel: resolvedAddress,
+        landmarkNote: closestReport.landmarkNote ?? args.landmarkNote,
+        escalatedAt: closestReport.escalatedAt ?? now,
+      });
+
+      return {
+        outcome: "clustered" as const,
+        reportId: closestReport._id,
+        ticketCode,
+        reportCount: nextCount,
+        distanceMeters: Number(closestDistance.toFixed(1)),
+        priority: "high" as const,
+        wasteCategory: resolvedCategory,
+        localAuthority: resolvedAuthority ?? null,
+        addressLabel: resolvedAddress ?? null,
+        status: closestReport.status,
+      };
+    }
+
+    const ticketCode = await generateNextTicketCode();
+    const trimmedContact = args.reporterContact?.trim() || undefined;
+    const trimmedCaption =
+      args.caption?.trim() ||
+      args.landmarkNote?.trim() ||
+      (args.addressLabel
+        ? `Roadside litter at ${args.addressLabel}`
+        : "Citizen crowdsource litter report");
+
+    const reportId = await ctx.db.insert("reports", {
+      userId: args.userId ?? "citizen-web-anon",
+      userName: args.userName ?? "Citizen Reporter",
+      chatId: "citizen-web",
+      photoStorageId: args.photoStorageId,
+      latitude: args.latitude,
+      longitude: args.longitude,
+      confidence: args.confidence,
+      status: "pending",
+      caption: trimmedCaption,
+      createdAt: now,
+      ticketCode,
+      wasteCategory: args.wasteCategory,
+      priority: "normal",
+      reportCount: 1,
+      clusterRadiusMeters: radius,
+      mergedPhotoStorageIds: [args.photoStorageId],
+      mergedReporterContacts: trimmedContact ? [trimmedContact] : [],
+      addressLabel: args.addressLabel?.trim() || undefined,
+      landmarkNote: args.landmarkNote?.trim() || undefined,
+      localAuthority: args.localAuthority?.trim() || undefined,
+      reporterContact: trimmedContact,
+      source: "citizen_web",
+    });
+
+    return {
+      outcome: "new" as const,
+      reportId,
+      ticketCode,
+      reportCount: 1,
+      distanceMeters: null,
+      priority: "normal" as const,
+      wasteCategory: args.wasteCategory,
+      localAuthority: args.localAuthority ?? null,
+      addressLabel: args.addressLabel ?? null,
+      status: "pending" as const,
+    };
+  },
+});
+
+/**
+ * Looks up a single report by human-readable ticket code (e.g. "#CLEO-1038") or Convex document ID.
+ */
+export const getReportByTicketOrId = query({
+  args: { lookup: v.string() },
+  returns: v.union(v.null(), citizenReportReturnValidator),
+  handler: async (ctx, args) => {
+    const raw = args.lookup.trim();
+    if (!raw) return null;
+
+    const normalizedCode = normalizeTicketCode(raw);
+    let doc = await ctx.db
+      .query("reports")
+      .withIndex("by_ticketCode", (q) => q.eq("ticketCode", normalizedCode))
+      .first();
+
+    if (!doc) {
+      const normalizedId = ctx.db.normalizeId("reports", raw);
+      if (normalizedId) {
+        doc = await ctx.db.get(normalizedId);
+      }
+    }
+
+    if (!doc) {
+      // Fallback: match last 4-8 chars of _id or substring of ticketCode
+      const recent = await ctx.db.query("reports").order("desc").take(100);
+      const lower = raw.toLowerCase().replace(/^#/, "");
+      doc =
+        recent.find(
+          (r) =>
+            r.ticketCode?.toLowerCase() === lower ||
+            r._id.toLowerCase().endsWith(lower)
+        ) ?? null;
+    }
+
+    if (!doc) return null;
+
+    const imageUrl = await ctx.storage.getUrl(doc.photoStorageId);
+    const proofImageUrl = doc.proofPhotoStorageId
+      ? await ctx.storage.getUrl(doc.proofPhotoStorageId)
+      : null;
+
+    const mergedIds = doc.mergedPhotoStorageIds ?? [];
+    const mergedUrlsRaw = await Promise.all(
+      mergedIds.map((id) => ctx.storage.getUrl(id))
+    );
+    const mergedImageUrls = mergedUrlsRaw.filter(
+      (u): u is string => typeof u === "string" && u.length > 0
+    );
+
+    return {
+      ...doc,
+      imageUrl,
+      proofImageUrl,
+      mergedImageUrls,
+    };
+  },
+});
+
+/**
+ * Lists recent reports for the citizen portal sidebar/drawer & search bar.
+ */
+export const listCitizenReports = query({
+  args: {
+    search: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(citizenReportReturnValidator),
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 30;
+    const reports = await ctx.db
+      .query("reports")
+      .order("desc")
+      .take(Math.max(limit * 3, 60));
+
+    const term = args.search?.trim().toLowerCase() ?? "";
+    const filtered = term
+      ? reports.filter((r) => {
+          const hay = [
+            r.ticketCode,
+            r._id,
+            r.addressLabel,
+            r.landmarkNote,
+            r.localAuthority,
+            r.caption,
+            r.wasteCategory,
+            r.status,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(term.replace(/^#/, ""));
+        })
+      : reports;
+
+    const sliced = filtered.slice(0, limit);
+
+    return await Promise.all(
+      sliced.map(async (r) => {
+        const imageUrl = await ctx.storage.getUrl(r.photoStorageId);
+        const proofImageUrl = r.proofPhotoStorageId
+          ? await ctx.storage.getUrl(r.proofPhotoStorageId)
+          : null;
+        return {
+          ...r,
+          imageUrl,
+          proofImageUrl,
+          mergedImageUrls: imageUrl ? [imageUrl] : [],
+        };
+      })
+    );
   },
 });
 
