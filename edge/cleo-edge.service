@@ -1,0 +1,24 @@
+[Unit]
+Description=CLEO Edge Litter Detection & Cloud Sync Pipeline
+After=local-fs.target network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dietpi
+Group=dietpi
+SupplementaryGroups=video i2c dialout
+WorkingDirectory=/home/dietpi
+Environment=PYTHONUNBUFFERED=1
+Environment=TRASH_DATA_DIR=/var/trash_data
+Environment=CONVEX_URL=https://savory-ram-12.convex.cloud
+ExecStart=/usr/bin/python3 /home/dietpi/edge/main_pipeline.py --model /home/dietpi/edge/models/trash_classifier_384.onnx --camera-source picam --width 1296 --height 972 --threshold 0.50 --lookahead 3.0 --min-sharpness 35.0 --interval 2.0 --min-distance 20.0 --dedup-window 1800 --visual-dedup-threshold 14 --imu-motion-threshold 0.08 --require-gps-fix
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

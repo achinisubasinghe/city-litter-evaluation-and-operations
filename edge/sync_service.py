@@ -137,7 +137,18 @@ class ConvexSyncService:
                 res = self._call_mutation("reports:createReportFromEdge", mutation_args)
                 self.storage.mark_as_synced(item_id)
                 synced_count += 1
-                logger.info(f"Synced report {item_id} -> Convex reportId: {res.get('reportId')}")
+                if isinstance(res, dict) and res.get("status") == "deduplicated":
+                    dist = res.get("distanceMeters")
+                    dist_str = f" ({dist:.1f}m from existing)" if isinstance(dist, (int, float)) else ""
+                    logger.info(
+                        f"Deduplicated report {item_id} on server{dist_str} -> "
+                        f"existing Convex reportId: {res.get('reportId')}"
+                    )
+                else:
+                    logger.info(
+                        f"Synced report {item_id} -> Convex reportId: "
+                        f"{res.get('reportId') if isinstance(res, dict) else res}"
+                    )
             except Exception as e:
                 logger.error(f"Failed to sync report {item_id}: {e}")
                 self.storage.increment_retry(item_id)

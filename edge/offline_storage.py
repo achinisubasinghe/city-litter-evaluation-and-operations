@@ -1,3 +1,4 @@
+import math
 import os
 import sqlite3
 import time
@@ -5,6 +6,19 @@ import uuid
 from typing import List, Dict, Any, Optional
 
 DEFAULT_DATA_DIR = os.environ.get("TRASH_DATA_DIR", "/var/trash_data")
+EARTH_RADIUS_METERS = 6378137.0
+
+
+def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_phi / 2.0) ** 2
+        + math.cos(phi1) * math.cos(phi2) * (math.sin(d_lambda / 2.0) ** 2)
+    )
+    return 2.0 * EARTH_RADIUS_METERS * math.asin(min(1.0, math.sqrt(a)))
 
 
 class OfflineStorage:
@@ -46,6 +60,7 @@ class OfflineStorage:
                     offset_meters REAL DEFAULT 0.0,
                     quality_score REAL DEFAULT 1.0,
                     blur_score REAL DEFAULT 100.0,
+                    visual_hash TEXT,
                     confidence REAL NOT NULL,
                     timestamp INTEGER NOT NULL,
                     has_gps_fix INTEGER NOT NULL,
@@ -55,6 +70,7 @@ class OfflineStorage:
                 );
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_synced ON local_reports(synced);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON local_reports(timestamp);")
 
             # Check and run automatic column migrations if table existed from an older version
             cursor.execute("PRAGMA table_info(local_reports);")
@@ -70,6 +86,7 @@ class OfflineStorage:
                 ("offset_meters", "REAL DEFAULT 0.0"),
                 ("quality_score", "REAL DEFAULT 1.0"),
                 ("blur_score", "REAL DEFAULT 100.0"),
+                ("visual_hash", "TEXT"),
             ]
             for col_name, col_type in migrations:
                 if col_name not in columns:
@@ -93,7 +110,8 @@ class OfflineStorage:
         heading_deg: Optional[float] = None,
         offset_meters: Optional[float] = None,
         quality_score: Optional[float] = None,
-        blur_score: Optional[float] = None
+        blur_score: Optional[float] = None,
+        visual_hash: Optional[str] = None
     ) -> str:
         incident_id = str(uuid.uuid4())
         now_ms = timestamp_ms or int(time.time() * 1000)
@@ -110,8 +128,8 @@ class OfflineStorage:
                     id, image_path, latitude, longitude,
                     raw_latitude, raw_longitude, is_corrected, correction_method,
                     speed_kmh, heading_deg, offset_meters, quality_score, blur_score,
-                    confidence, timestamp, has_gps_fix, synced, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                    visual_hash, confidence, timestamp, has_gps_fix, synced, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
             """, (
                 incident_id,
                 image_path,
@@ -126,6 +144,7 @@ class OfflineStorage:
                 offset_meters or 0.0,
                 quality_score if quality_score is not None else 1.0,
                 blur_score if blur_score is not None else 100.0,
+                visual_hash,
                 round(confidence, 4),
                 now_ms,
                 1 if has_gps_fix else 0,
@@ -134,6 +153,92 @@ class OfflineStorage:
             conn.commit()
 
         return incident_id
+
+    def find_nearby_incident(
+        self,
+        latitude: float,
+        longitude: float,
+        radius_meters: float = 20.0,
+        window_seconds: Optional[float] = 1800.0,
+        now_ms: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Returns the nearest previously saved incident within `radius_meters`
+        (and optional `window_seconds`), or None if no spatial duplicate exists.
+        """
+        if radius_meters <= 0:
+            return None
+
+        ref_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        lat_delta = (radius_meters / EARTH_RADIUS_METERS) * (180.0 / math.pi)
+        cos_lat = max(1e-6, abs(math.cos(math.radians(latitude))))
+        lon_delta = lat_delta / cos_lat
+
+        params: List[Any] = [
+            latitude - lat_delta,
+            latitude + lat_delta,
+            longitude - lon_delta,
+            longitude + lon_delta,
+        ]
+        time_clause = ""
+        if window_seconds is not None and window_seconds > 0:
+            cutoff_ms = ref_ms - int(window_seconds * 1000)
+            time_clause = "AND timestamp >= ?"
+            params.append(cutoff_ms)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                SELECT id, latitude, longitude, confidence, timestamp, visual_hash, correction_method
+                FROM local_reports
+                WHERE latitude BETWEEN ? AND ?
+                  AND longitude BETWEEN ? AND ?
+                  AND (correction_method IS NULL OR correction_method != 'default_fallback')
+                  {time_clause}
+                ORDER BY timestamp DESC
+                LIMIT 100
+            """, params)
+            rows = cursor.fetchall()
+
+        nearest: Optional[Dict[str, Any]] = None
+        nearest_dist = float("inf")
+        for row in rows:
+            dist = _haversine_meters(latitude, longitude, row["latitude"], row["longitude"])
+            if dist <= radius_meters and dist < nearest_dist:
+                nearest_dist = dist
+                nearest = dict(row)
+                nearest["distance_meters"] = round(dist, 2)
+
+        return nearest
+
+    def get_recent_visual_hashes(
+        self,
+        limit: int = 8,
+        window_seconds: Optional[float] = 300.0,
+        now_ms: Optional[int] = None
+    ) -> List[str]:
+        """Returns recent non-null visual dHash hex strings (newest first)."""
+        ref_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        params: List[Any] = []
+        time_clause = ""
+        if window_seconds is not None and window_seconds > 0:
+            cutoff_ms = ref_ms - int(window_seconds * 1000)
+            time_clause = "AND timestamp >= ?"
+            params.append(cutoff_ms)
+        params.append(limit)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                SELECT visual_hash
+                FROM local_reports
+                WHERE visual_hash IS NOT NULL
+                  AND visual_hash != ''
+                  {time_clause}
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, params)
+            return [row["visual_hash"] for row in cursor.fetchall()]
 
     def get_pending_sync(self, limit: int = 10) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:

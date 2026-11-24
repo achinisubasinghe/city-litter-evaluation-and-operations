@@ -473,9 +473,30 @@ export const generateUploadUrl = mutation({
   },
 });
 
+const EARTH_RADIUS_METERS = 6378137.0;
+const DEFAULT_EDGE_DEDUP_RADIUS_METERS = 20.0;
+
+function haversineMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const dPhi = toRad(lat2 - lat1);
+  const dLambda = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dPhi / 2) ** 2 +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
+  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 /**
  * Ingestion mutation specifically for edge hardware units (Raspberry Pi prototype).
- * Inserts the detection directly with offline timestamps and GPS coordinates.
+ * Inserts the detection directly with offline timestamps and GPS coordinates,
+ * deduplicating against nearby unresolved reports within `dedupRadiusMeters`.
  */
 export const createReportFromEdge = mutation({
   args: {
@@ -495,12 +516,58 @@ export const createReportFromEdge = mutation({
     offsetMeters: v.optional(v.number()),
     qualityScore: v.optional(v.number()),
     blurScore: v.optional(v.number()),
+    dedupRadiusMeters: v.optional(v.number()),
   },
   returns: v.object({
     reportId: v.id("reports"),
-    status: v.literal("created"),
+    status: v.union(v.literal("created"), v.literal("deduplicated")),
+    distanceMeters: v.optional(v.number()),
   }),
   handler: async (ctx, args) => {
+    const dedupRadius =
+      args.dedupRadiusMeters ?? DEFAULT_EDGE_DEDUP_RADIUS_METERS;
+
+    if (dedupRadius > 0) {
+      const [pendingReports, inProgressReports] = await Promise.all([
+        ctx.db
+          .query("reports")
+          .withIndex("by_status", (q) => q.eq("status", "pending"))
+          .order("desc")
+          .take(250),
+        ctx.db
+          .query("reports")
+          .withIndex("by_status", (q) => q.eq("status", "in_progress"))
+          .order("desc")
+          .take(250),
+      ]);
+
+      let nearestReportId: (typeof pendingReports)[number]["_id"] | null = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      for (const existing of [...pendingReports, ...inProgressReports]) {
+        const dist = haversineMeters(
+          args.latitude,
+          args.longitude,
+          existing.latitude,
+          existing.longitude
+        );
+        if (dist <= dedupRadius && dist < nearestDistance) {
+          nearestDistance = dist;
+          nearestReportId = existing._id;
+        }
+      }
+
+      if (nearestReportId !== null) {
+        // Delete redundant uploaded image blob to avoid orphaned storage files
+        await ctx.storage.delete(args.photoStorageId);
+        return {
+          reportId: nearestReportId,
+          status: "deduplicated" as const,
+          distanceMeters: Math.round(nearestDistance * 10) / 10,
+        };
+      }
+    }
+
     const reportId = await ctx.db.insert("reports", {
       userId: args.deviceId ?? "rpi-edge-01",
       userName: `Edge Unit (${args.deviceId ?? "Pi-4B"})`,

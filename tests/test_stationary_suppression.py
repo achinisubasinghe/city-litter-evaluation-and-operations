@@ -44,8 +44,11 @@ def test_stationary_capture_suppression_workflow():
             check_quality=False,
             stationary_debounce_sec=0.1,
             max_stationary_captures=1,
-            suppress_stationary_duplicates=True
+            suppress_stationary_duplicates=True,
+            min_distance_meters=0.0,
+            visual_dedup_max_hamming=-1
         )
+        controller.sync_service.check_connectivity = lambda: False
 
         controller.classifier.predict = lambda img: 0.95
 
@@ -112,8 +115,11 @@ def test_disabled_stationary_suppression():
             check_quality=False,
             stationary_debounce_sec=0.1,
             max_stationary_captures=1,
-            suppress_stationary_duplicates=False
+            suppress_stationary_duplicates=False,
+            min_distance_meters=0.0,
+            visual_dedup_max_hamming=-1
         )
+        controller.sync_service.check_connectivity = lambda: False
 
         controller.classifier.predict = lambda img: 0.95
         test_img = Image.new("RGB", (384, 384), color=(120, 120, 120))

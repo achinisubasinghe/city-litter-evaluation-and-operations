@@ -14,6 +14,19 @@ logger = logging.getLogger("LocationFusion")
 EARTH_RADIUS_METERS = 6378137.0
 
 
+def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates great-circle distance in meters between two WGS-84 coordinates."""
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_phi / 2.0) ** 2
+        + math.cos(phi1) * math.cos(phi2) * (math.sin(d_lambda / 2.0) ** 2)
+    )
+    return 2.0 * EARTH_RADIUS_METERS * math.asin(min(1.0, math.sqrt(a)))
+
+
 class LocationFusionCorrector:
     """
     Fuses high-frequency MPU-6050 accelerometer & gyroscope data with NEO-6M GPS fixes
@@ -122,7 +135,9 @@ class LocationFusionCorrector:
 
                 # 4. Zero-Velocity Update (ZUPT)
                 # When stationary, vehicle speed must be 0 (cancels accelerometer integration drift)
-                if dynamic_motion < 0.06 and (not is_moving) and self._anchor_speed_ms < 0.4:
+                gps_stopped = self._has_valid_fix and self._anchor_speed_ms < 0.42
+                imu_calm = dynamic_motion < 0.10 and (not is_moving) and self._anchor_speed_ms < 0.5
+                if gps_stopped or imu_calm:
                     self._stationary_time += dt
                     if self._stationary_time > 0.4:
                         self._is_stationary = True
@@ -195,6 +210,14 @@ class LocationFusionCorrector:
 
                         # Reset accumulated distance since this new anchor
                         self._integrated_distance_since_anchor = 0.0
+
+    @staticmethod
+    def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        return haversine_meters(lat1, lon1, lat2, lon2)
+
+    def is_stationary(self) -> bool:
+        with self._lock:
+            return self._is_stationary
 
     @staticmethod
     def project_geodesic(lat: float, lon: float, distance_meters: float, heading_deg: float) -> Tuple[float, float]:
@@ -306,6 +329,7 @@ class LocationFusionCorrector:
                 "uncertainty_meters": uncertainty_m,
                 "has_gps_fix": has_fix,
                 "satellites": satellites,
+                "is_stationary": self._is_stationary,
                 "latency_ms": round(delta_t * 1000.0, 1),
                 "timestamp": int(t_event * 1000)
             }
