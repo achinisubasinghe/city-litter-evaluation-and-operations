@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import logging
 import threading
 import time
@@ -37,6 +38,7 @@ class GPSReader:
         self.running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._clock_offset_sec: Optional[float] = None
         
         self.state: Dict[str, Any] = {
             "latitude": None,
@@ -86,6 +88,15 @@ class GPSReader:
             self.state["last_updated"] = time.time()
             self.state["is_mock"] = True
 
+    def get_corrected_timestamp_ms(self, epoch_sec: Optional[float] = None) -> int:
+        """Applies GPS UTC clock offset when system clock differs (e.g., Pi without RTC)."""
+        base_sec = epoch_sec if epoch_sec is not None else time.time()
+        with self._lock:
+            offset = self._clock_offset_sec
+        if offset is not None and abs(offset) > 5.0:
+            base_sec += offset
+        return int(base_sec * 1000)
+
     def _reader_loop(self):
         if serial is None:
             logger.info("pyserial not available or running in mock environment. Using default GPS simulation.")
@@ -112,17 +123,7 @@ class GPSReader:
                         if line:
                             self._parse_line(line)
             except Exception as e:
-                # Port might not exist if not on Raspberry Pi hardware
-                with self._lock:
-                    if self.state["latitude"] is None:
-                        self.state["latitude"] = 6.762915
-                        self.state["longitude"] = 80.004667
-                        self.state["speed_kmh"] = 0.0
-                        self.state["heading"] = 45.0
-                        self.state["has_fix"] = True
-                        self.state["satellites"] = 4
-                        self.state["last_updated"] = time.time()
-                        self.state["is_mock"] = True
+                logger.warning(f"GPS serial error on {self.port}: {e}")
                 time.sleep(1.0)
 
     def _parse_line(self, line: str):
@@ -151,9 +152,18 @@ class GPSReader:
                     self.state["latitude"] = lat
                     self.state["longitude"] = lon
                 
-                self.state["has_fix"] = (status == 'A')
+                has_fix = (status == 'A')
+                self.state["has_fix"] = has_fix
                 self.state["utc_time"] = raw_time
                 self.state["utc_date"] = raw_date
+
+                if has_fix and len(raw_time) >= 6 and len(raw_date) == 6:
+                    try:
+                        gps_dt = datetime.strptime(f"{raw_date}{raw_time[:6]}", "%d%m%y%H%M%S").replace(tzinfo=timezone.utc)
+                        if gps_dt.year >= 2024:
+                            self._clock_offset_sec = gps_dt.timestamp() - time.time()
+                    except ValueError:
+                        pass
                 
                 try:
                     if speed_knots:

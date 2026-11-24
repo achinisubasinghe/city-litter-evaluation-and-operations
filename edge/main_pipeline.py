@@ -431,13 +431,19 @@ class EdgeMasterController:
                 suppression_reason="no_gps_fix"
             )
 
+        incident_timestamp_ms = (
+            self.gps.get_corrected_timestamp_ms(t_capture)
+            if self.gps and hasattr(self.gps, "get_corrected_timestamp_ms")
+            else corr["timestamp"]
+        )
+
         if self.min_distance_meters > 0 and corr["correction_method"] != "default_fallback":
             nearby = self.storage.find_nearby_incident(
                 latitude=corr["latitude"],
                 longitude=corr["longitude"],
                 radius_meters=self.min_distance_meters,
                 window_seconds=self.spatial_dedup_window_sec,
-                now_ms=corr["timestamp"]
+                now_ms=incident_timestamp_ms
             )
             if nearby is not None:
                 logger.info(
@@ -488,7 +494,7 @@ class EdgeMasterController:
             longitude=corr["longitude"],
             confidence=confidence,
             has_gps_fix=corr["has_gps_fix"],
-            timestamp_ms=corr["timestamp"],
+            timestamp_ms=incident_timestamp_ms,
             raw_latitude=corr["raw_latitude"],
             raw_longitude=corr["raw_longitude"],
             is_corrected=corr["is_corrected"],
@@ -517,11 +523,8 @@ class EdgeMasterController:
             f"Camera Quality: {int(quality.get('quality_score', 1.0) * 100)}% (Sharp: {quality.get('sharpness_score', 0.0):.1f})"
         )
 
-        if self.sync_service.check_connectivity():
-            uploaded = self.sync_service.sync_batch(batch_size=5)
-            logger.info(f"Direct sync status: {uploaded} incident(s) uploaded to Convex.")
-        else:
-            logger.info("Device offline: Incident safely stored in local queue.")
+        self.sync_service.notify_new_incident()
+        logger.info("Incident queued in local storage; background sync notified.")
 
         return DetectionResult(
             is_litter=True,

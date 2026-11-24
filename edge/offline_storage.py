@@ -38,13 +38,16 @@ class OfflineStorage:
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 5000;")
+        conn.execute("PRAGMA synchronous = FULL;")
         return conn
 
     def _init_db(self):
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("PRAGMA journal_mode = WAL;")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS local_reports (
                     id TEXT PRIMARY KEY,
@@ -117,9 +120,21 @@ class OfflineStorage:
         now_ms = timestamp_ms or int(time.time() * 1000)
         filename = f"litter_{now_ms}_{incident_id[:8]}.jpg"
         image_path = os.path.join(self.img_dir, filename)
+        tmp_path = f"{image_path}.tmp"
 
-        with open(image_path, "wb") as f:
-            f.write(image_bytes)
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(image_bytes)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, image_path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            raise
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -250,7 +265,7 @@ class OfflineStorage:
                        confidence, timestamp, has_gps_fix, retry_count
                 FROM local_reports
                 WHERE synced = 0
-                ORDER BY timestamp ASC
+                ORDER BY retry_count ASC, timestamp ASC
                 LIMIT ?
             """, (limit,))
             rows = cursor.fetchall()

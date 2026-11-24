@@ -7,10 +7,10 @@ import time
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "edge"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from location_fusion import haversine_meters
 from main_pipeline import (
@@ -53,8 +53,12 @@ def _make_controller(temp_dir: str, **kwargs) -> EdgeMasterController:
 
 
 def test_classifier_fail_fast_when_model_missing():
-    with pytest.raises(RuntimeError, match="Model file not found|Could not initialize"):
+    raised = False
+    try:
         LitterClassifier("/nonexistent/path/missing_model.onnx", allow_mock=False)
+    except RuntimeError as exc:
+        raised = "Model file not found" in str(exc) or "Could not initialize" in str(exc)
+    assert raised, "Expected RuntimeError when model path is missing and allow_mock=False"
 
 
 def test_classifier_explicit_allow_mock():
@@ -65,8 +69,12 @@ def test_classifier_explicit_allow_mock():
         with open(bad_onnx, "wb") as f:
             f.write(b"not a valid onnx model")
 
-        with pytest.raises(RuntimeError, match="Could not initialize ONNX Runtime"):
+        raised = False
+        try:
             LitterClassifier(bad_onnx, allow_mock=False)
+        except RuntimeError as exc:
+            raised = "Could not initialize ONNX Runtime" in str(exc)
+        assert raised, "Expected RuntimeError when ONNX load fails and allow_mock=False"
 
         clf = LitterClassifier(bad_onnx, allow_mock=True)
         assert clf.backend is None
@@ -316,3 +324,20 @@ def test_haversine_accuracy():
     # ~111.32 meters per 0.001 degree latitude
     dist = haversine_meters(6.8100, 79.9949, 6.8110, 79.9949)
     assert 110.0 < dist < 113.0
+
+
+if __name__ == "__main__":
+    for fn in [
+        test_classifier_fail_fast_when_model_missing,
+        test_classifier_explicit_allow_mock,
+        test_spatial_geofence_deduplication_and_persistence,
+        test_visual_dhash_deduplication_and_persistence,
+        test_real_gps_zero_speed_overrides_imu_idle_vibration,
+        test_require_gps_fix_suppresses_fallback_coordinates,
+        test_mpu6050_default_threshold_and_thread_safety,
+        test_sync_service_handles_server_deduplicated_response,
+        test_haversine_accuracy,
+    ]:
+        fn()
+        print(f"PASS: {fn.__name__}")
+    print("ALL deduplication unit tests passed successfully!")

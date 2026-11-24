@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -26,6 +27,12 @@ class ConvexSyncService:
         self.convex_url = convex_url.rstrip("/")
         self.storage = storage or OfflineStorage()
         self.running = False
+        self._stop_requested = False
+        self._sync_lock = threading.Lock()
+        self._wake_event = threading.Event()
+
+    def notify_new_incident(self):
+        self._wake_event.set()
 
     def check_connectivity(self) -> bool:
         try:
@@ -78,85 +85,90 @@ class ConvexSyncService:
             return data["storageId"]
 
     def sync_batch(self, batch_size: int = 5) -> int:
-        pending = self.storage.get_pending_sync(limit=batch_size)
-        if not pending:
-            return 0
+        with self._sync_lock:
+            pending = self.storage.get_pending_sync(limit=batch_size)
+            if not pending:
+                return 0
 
-        synced_count = 0
-        for item in pending:
-            item_id = item["id"]
-            img_path = item["image_path"]
+            synced_count = 0
+            for item in pending:
+                if self._stop_requested:
+                    break
 
-            if not os.path.exists(img_path):
-                logger.warning(f"Image not found on disk: {img_path}. Marking synced.")
-                self.storage.mark_as_synced(item_id)
-                continue
+                item_id = item["id"]
+                img_path = item["image_path"]
 
-            try:
-                with open(img_path, "rb") as f:
-                    image_bytes = f.read()
+                if not os.path.exists(img_path) or os.path.getsize(img_path) == 0:
+                    logger.warning(f"Image missing or empty on disk: {img_path}. Marking synced.")
+                    self.storage.mark_as_synced(item_id)
+                    continue
 
-                upload_url = self._get_upload_url()
-                storage_id = self._upload_image_bytes(upload_url, image_bytes)
+                try:
+                    with open(img_path, "rb") as f:
+                        image_bytes = f.read()
 
-                offset_m = item.get("offset_meters") or 0.0
-                heading_deg = item.get("heading_deg") or 0.0
-                method = item.get("correction_method") or "fused_gps_imu"
-                conf_pct = int(item["confidence"] * 100)
+                    upload_url = self._get_upload_url()
+                    storage_id = self._upload_image_bytes(upload_url, image_bytes)
 
-                quality_score = item.get("quality_score")
-                blur_score = item.get("blur_score")
+                    offset_m = item.get("offset_meters") or 0.0
+                    heading_deg = item.get("heading_deg") or 0.0
+                    method = item.get("correction_method") or "fused_gps_imu"
+                    conf_pct = int(item["confidence"] * 100)
 
-                if item.get("is_corrected"):
-                    q_str = f", Quality: {int(quality_score * 100)}%" if quality_score is not None else ""
-                    caption = (
-                        f"Autonomous roadside detection (Confidence: {conf_pct}%, "
-                        f"Corrected: +{offset_m:.1f}m @ {heading_deg:.0f}°, {method}{q_str})"
-                    )
-                else:
-                    caption = f"Autonomous roadside detection (Confidence: {conf_pct}%)"
+                    quality_score = item.get("quality_score")
+                    blur_score = item.get("blur_score")
 
-                mutation_args = {
-                    "photoStorageId": storage_id,
-                    "latitude": item["latitude"],
-                    "longitude": item["longitude"],
-                    "confidence": item["confidence"],
-                    "createdAt": item["timestamp"],
-                    "deviceId": "rpi4-prototype",
-                    "rawLatitude": item.get("raw_latitude"),
-                    "rawLongitude": item.get("raw_longitude"),
-                    "isLocationCorrected": bool(item.get("is_corrected", 0)),
-                    "correctionMethod": method,
-                    "speedKmh": item.get("speed_kmh"),
-                    "heading": heading_deg,
-                    "offsetMeters": offset_m,
-                    "qualityScore": quality_score,
-                    "blurScore": blur_score,
-                    "caption": caption
-                }
-                res = self._call_mutation("reports:createReportFromEdge", mutation_args)
-                self.storage.mark_as_synced(item_id)
-                synced_count += 1
-                if isinstance(res, dict) and res.get("status") == "deduplicated":
-                    dist = res.get("distanceMeters")
-                    dist_str = f" ({dist:.1f}m from existing)" if isinstance(dist, (int, float)) else ""
-                    logger.info(
-                        f"Deduplicated report {item_id} on server{dist_str} -> "
-                        f"existing Convex reportId: {res.get('reportId')}"
-                    )
-                else:
-                    logger.info(
-                        f"Synced report {item_id} -> Convex reportId: "
-                        f"{res.get('reportId') if isinstance(res, dict) else res}"
-                    )
-            except Exception as e:
-                logger.error(f"Failed to sync report {item_id}: {e}")
-                self.storage.increment_retry(item_id)
+                    if item.get("is_corrected"):
+                        q_str = f", Quality: {int(quality_score * 100)}%" if quality_score is not None else ""
+                        caption = (
+                            f"Autonomous roadside detection (Confidence: {conf_pct}%, "
+                            f"Corrected: +{offset_m:.1f}m @ {heading_deg:.0f}°, {method}{q_str})"
+                        )
+                    else:
+                        caption = f"Autonomous roadside detection (Confidence: {conf_pct}%)"
 
-        return synced_count
+                    mutation_args = {
+                        "photoStorageId": storage_id,
+                        "latitude": item["latitude"],
+                        "longitude": item["longitude"],
+                        "confidence": item["confidence"],
+                        "createdAt": item["timestamp"],
+                        "deviceId": "rpi4-prototype",
+                        "rawLatitude": item.get("raw_latitude"),
+                        "rawLongitude": item.get("raw_longitude"),
+                        "isLocationCorrected": bool(item.get("is_corrected", 0)),
+                        "correctionMethod": method,
+                        "speedKmh": item.get("speed_kmh"),
+                        "heading": heading_deg,
+                        "offsetMeters": offset_m,
+                        "qualityScore": quality_score,
+                        "blurScore": blur_score,
+                        "caption": caption
+                    }
+                    res = self._call_mutation("reports:createReportFromEdge", mutation_args)
+                    self.storage.mark_as_synced(item_id)
+                    synced_count += 1
+                    if isinstance(res, dict) and res.get("status") == "deduplicated":
+                        dist = res.get("distanceMeters")
+                        dist_str = f" ({dist:.1f}m from existing)" if isinstance(dist, (int, float)) else ""
+                        logger.info(
+                            f"Deduplicated report {item_id} on server{dist_str} -> "
+                            f"existing Convex reportId: {res.get('reportId')}"
+                        )
+                    else:
+                        logger.info(
+                            f"Synced report {item_id} -> Convex reportId: "
+                            f"{res.get('reportId') if isinstance(res, dict) else res}"
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to sync report {item_id}: {e}")
+                    self.storage.increment_retry(item_id)
+
+            return synced_count
 
     def run_daemon(self, check_interval: int = 15):
         self.running = True
+        self._stop_requested = False
         logger.info(f"Sync daemon started. Convex URL: {self.convex_url}")
 
         while self.running:
@@ -164,18 +176,26 @@ class ConvexSyncService:
                 stats = self.storage.get_stats()
                 if stats["pending"] > 0:
                     if self.check_connectivity():
-                        uploaded = self.sync_batch(batch_size=5)
-                        if uploaded > 0:
-                            logger.info(f"Uploaded {uploaded} reports to cloud database.")
+                        total_uploaded = 0
+                        while self.running:
+                            uploaded = self.sync_batch(batch_size=10)
+                            total_uploaded += uploaded
+                            if uploaded == 0:
+                                break
+                        if total_uploaded > 0:
+                            logger.info(f"Uploaded {total_uploaded} reports to cloud database.")
                     else:
                         logger.warning("Device offline. Reports queued in local storage.")
                 self.storage.cleanup_old_images(days_retention=7)
             except Exception as e:
                 logger.error(f"Sync error: {e}")
-            time.sleep(check_interval)
+            self._wake_event.wait(timeout=check_interval)
+            self._wake_event.clear()
 
     def stop(self):
         self.running = False
+        self._stop_requested = True
+        self._wake_event.set()
 
 
 if __name__ == "__main__":
